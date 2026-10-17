@@ -154,7 +154,7 @@ export const EmendasParlamentares: React.FC = () => {
         </div>
       )}
 
-      {respostaStatus && respostaStatus.status && respostaStatus.status.startsWith('erro') && (
+      {respostaStatus && respostaStatus.status && !['sucesso', 'sem_resultados', 'sem_chave'].includes(respostaStatus.status) && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-6 text-xs text-red-900 shadow-xs">
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-red-700 shrink-0 mt-0.5" />
