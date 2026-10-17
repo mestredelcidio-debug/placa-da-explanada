@@ -59,7 +59,8 @@ export const EmendasParlamentares: React.FC = () => {
     consultarEmendas();
   }, [ano]);
 
-  const formatCurrency = (val: number) => {
+  const formatCurrency = (val?: number | null) => {
+    if (typeof val !== 'number' || !Number.isFinite(val)) return 'Não informado pela fonte';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -153,13 +154,21 @@ export const EmendasParlamentares: React.FC = () => {
         </div>
       )}
 
-      {respostaStatus && respostaStatus.status === 'erro' && (
+      {respostaStatus && respostaStatus.status && respostaStatus.status.startsWith('erro') && (
         <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-6 text-xs text-red-900 shadow-xs">
           <div className="flex items-start gap-3">
             <AlertCircle className="h-5 w-5 text-red-700 shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1">
               <h3 className="text-sm font-bold text-red-900">Erro na Consulta</h3>
-              <p className="mt-1">{respostaStatus.mensagem}</p>
+              <p className="mt-1">{respostaStatus.mensagem || 'Não foi possível concluir a consulta.'}</p>
+              <button
+                type="button"
+                onClick={consultarEmendas}
+                disabled={carregando}
+                className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 font-semibold text-red-900 hover:bg-red-100 disabled:opacity-60"
+              >
+                Tentar novamente
+              </button>
             </div>
           </div>
         </div>
@@ -245,6 +254,40 @@ export const EmendasParlamentares: React.FC = () => {
         </div>
       </div>
 
+      {respostaStatus?.configurado && respostaStatus.resumoFinanceiro && (
+        <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-xs" aria-live="polite">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Resumo da consulta oficial</h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Exercício {respostaStatus.exercicio ?? ano} · {respostaStatus.total ?? dados.length} registro(s) nesta página · página {respostaStatus.pagina ?? 1}
+              </p>
+            </div>
+            {respostaStatus.consultadoEm && (
+              <p className="text-[11px] text-slate-500">
+                Consultado em {new Date(respostaStatus.consultadoEm).toLocaleString('pt-BR')}
+              </p>
+            )}
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {([
+              ['Valor previsto/autorizado', respostaStatus.resumoFinanceiro.valorPrevisto],
+              ['Valor empenhado', respostaStatus.resumoFinanceiro.valorEmpenhado],
+              ['Valor liquidado', respostaStatus.resumoFinanceiro.valorLiquidado],
+              ['Valor pago', respostaStatus.resumoFinanceiro.valorPago],
+            ] as Array<[string, number | null]>).map(([label, value]) => (
+              <div key={label} className="rounded-lg bg-slate-50 p-3">
+                <span className="block text-[11px] text-slate-500">{label}</span>
+                <strong className="mt-1 block font-mono text-sm text-slate-900">{formatCurrency(value)}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            {respostaStatus.resumoFinanceiro.observacao || 'Valores somados somente quando presentes na resposta oficial; campos ausentes não são tratados como zero.'}
+          </p>
+        </section>
+      )}
+
       {/* Results View */}
       <div className="mt-6 space-y-4">
         {carregando && (
@@ -254,9 +297,9 @@ export const EmendasParlamentares: React.FC = () => {
           </div>
         )}
 
-        {!carregando && dados.length === 0 && respostaStatus?.configurado && (
+        {!carregando && dados.length === 0 && respostaStatus?.configurado && (respostaStatus.status === 'sem_resultados' || respostaStatus.status === 'sucesso') && (
           <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-xs text-slate-500">
-            Nenhuma emenda localizada para os critérios pesquisados. Verifique o ano e o código informado.
+            Nenhuma emenda localizada para os critérios pesquisados. Verifique o exercício, o código ou o nome do autor e tente novamente.
           </div>
         )}
 
@@ -264,28 +307,26 @@ export const EmendasParlamentares: React.FC = () => {
           <div className="grid grid-cols-1 gap-4">
             {dados.map((emenda, idx) => (
               <div
-                key={`${emenda.codigoEmenda}_${idx}`}
+                key={`${emenda.codigoEmenda || "sem-codigo"}_${emenda.ano ?? ano}_${idx}`}
                 className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs transition hover:border-slate-300"
               >
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                       <span className="font-mono font-bold text-blue-900">
-                        Emenda nº {emenda.codigoEmenda}
+                        {emenda.codigoEmenda ? `Emenda nº ${emenda.codigoEmenda}` : 'Código não informado pela fonte'}
                       </span>
                       <span>·</span>
-                      <span>Ano: <strong>{emenda.ano}</strong></span>
-                      <span>·</span>
-                      <span>{emenda.tipoEmenda}</span>
+                      <span>Ano: <strong>{emenda.ano ?? ano}</strong></span>
+                      {emenda.tipoEmenda && <><span>·</span><span>{emenda.tipoEmenda}</span></>}
                     </div>
 
-                    <h3 className="text-base font-semibold text-slate-900">
-                      Autor: {emenda.autor}
-                    </h3>
-
-                    <p className="text-xs text-slate-600">
-                      Localidade beneficiada: <strong>{emenda.localidade}</strong>
-                    </p>
+                    {emenda.autor && <h3 className="text-base font-semibold text-slate-900">Autor: {emenda.autor}</h3>}
+                    {emenda.localidade && <p className="text-xs text-slate-600">Localidade informada: <strong>{emenda.localidade}</strong></p>}
+                    {emenda.orgaoResponsavel && <p className="text-xs text-slate-600">Órgão responsável: <strong>{emenda.orgaoResponsavel}</strong></p>}
+                    {emenda.beneficiario && <p className="text-xs text-slate-600">Beneficiário: <strong>{emenda.beneficiario}</strong></p>}
+                    {emenda.funcao && <p className="text-xs text-slate-600">Função: <strong>{emenda.funcao}</strong>{emenda.subfuncao ? <> · Subfunção: <strong>{emenda.subfuncao}</strong></> : null}</p>}
+                    {emenda.situacao && <p className="text-xs text-slate-600">Situação registrada: <strong>{emenda.situacao}</strong></p>}
                   </div>
 
                   {emenda.linkOficial && (
