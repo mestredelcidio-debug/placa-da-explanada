@@ -1,0 +1,6 @@
+{
+  "name": "VOCÊ ON",
+  "description": "Plataforma cidadã de transparência pública para acompanhamento de votações nominais, despesas da cota parlamentar e emendas orçamentárias de deputados federais e senadores.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
