@@ -78,7 +78,22 @@ export interface RespostaEmendas {
   };
   dados: EmendaItem[];
   total?: number;
+  pagina?: number;
+  exercicio?: number;
+  consultadoEm?: string;
   atualizadoEm?: string;
+  resumoFinanceiro?: {
+    valorPrevisto: number | null;
+    valorEmpenhado: number | null;
+    valorLiquidado: number | null;
+    valorPago: number | null;
+    observacao?: string;
+  };
+  fonte?: {
+    nome: string;
+    endpoint: string;
+    url: string;
+  };
   fontesOficiaisComplementares?: Array<{
     nome: string;
     url: string;
@@ -195,8 +210,8 @@ export async function fetchEmendas(params: {
   if (!res.ok) {
     return {
       configurado: true,
-      status: 'erro',
-      mensagem: data.erro || 'Falha ao consultar emendas',
+      status: data.status || 'erro',
+      mensagem: data.mensagem || data.erro || 'Falha ao consultar emendas',
       dados: [],
     };
   }
