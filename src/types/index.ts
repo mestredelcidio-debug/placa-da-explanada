@@ -99,20 +99,21 @@ export interface DespesaRankingItem {
 }
 
 export interface EmendaItem {
-  codigoEmenda: string;
-  ano: number;
-  tipoEmenda: string;
-  autor: string;
+  codigoEmenda?: string;
+  ano?: number;
+  tipoEmenda?: string;
+  autor?: string;
   partidoAutor?: string;
   ufAutor?: string;
   casa?: 'camara' | 'senado' | 'mista';
-  localidade: string;
+  localidade?: string;
   funcao?: string;
   subfuncao?: string;
-  valorPrevisto: number;
-  valorEmpenhado: number;
-  valorLiquidado: number;
-  valorPago: number;
+  orgaoResponsavel?: string;
+  valorPrevisto?: number;
+  valorEmpenhado?: number;
+  valorLiquidado?: number;
+  valorPago?: number;
   situacao?: string;
   beneficiario?: string;
   linkOficial?: string;
