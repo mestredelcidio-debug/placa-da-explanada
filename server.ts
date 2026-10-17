@@ -762,6 +762,7 @@ app.get('/api/emendas', async (req: Request, res: Response) => {
       };
       assignText('codigoEmenda', ['codigoEmenda', 'numeroEmenda']);
       assignNumber('ano', ['ano']);
+      if (record.ano === undefined) record.ano = ano;
       assignText('tipoEmenda', ['tipoEmenda']);
       assignText('autor', ['nomeAutor']);
       assignText('partidoAutor', ['partidoAutor', 'siglaPartidoAutor']);
