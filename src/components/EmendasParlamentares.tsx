@@ -26,11 +26,13 @@ export const EmendasParlamentares: React.FC = () => {
   const [ano, setAno] = useState<number>(2024);
   const [codigoEmenda, setCodigoEmenda] = useState<string>('');
   const [autor, setAutor] = useState<string>('');
+  const [paginaAtual, setPaginaAtual] = useState<number>(1);
   const [dados, setDados] = useState<EmendaItem[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [respostaStatus, setRespostaStatus] = useState<RespostaEmendas | null>(null);
 
-  const consultarEmendas = async () => {
+  const consultarEmendas = async (paginaSolicitada: number = paginaAtual) => {
+    setPaginaAtual(paginaSolicitada);
     setCarregando(true);
     setRespostaStatus(null);
     setDados([]);
@@ -39,8 +41,10 @@ export const EmendasParlamentares: React.FC = () => {
         ano,
         codigoEmenda: codigoEmenda || undefined,
         autor: autor || undefined,
+        pagina: paginaSolicitada,
       });
       setRespostaStatus(res);
+      setPaginaAtual(res.pagina ?? paginaSolicitada);
       setDados(res.dados || []);
     } catch (err) {
       console.error('Erro ao consultar emendas:', err);
@@ -56,7 +60,8 @@ export const EmendasParlamentares: React.FC = () => {
   };
 
   useEffect(() => {
-    consultarEmendas();
+    setPaginaAtual(1);
+    consultarEmendas(1);
   }, [ano]);
 
   const formatCurrency = (val?: number | null) => {
@@ -244,7 +249,7 @@ export const EmendasParlamentares: React.FC = () => {
               />
             </div>
             <button
-              onClick={consultarEmendas}
+              onClick={() => consultarEmendas(1)}
               disabled={carregando}
               className="rounded-lg bg-blue-900 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-800 cursor-pointer shrink-0"
             >
@@ -377,6 +382,28 @@ export const EmendasParlamentares: React.FC = () => {
           </div>
         )}
       </div>
+
+      {respostaStatus?.configurado && ['sucesso', 'sem_resultados'].includes(respostaStatus.status || '') && (
+        <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+          <button
+            type="button"
+            onClick={() => consultarEmendas(Math.max(1, paginaAtual - 1))}
+            disabled={carregando || paginaAtual <= 1}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Página anterior
+          </button>
+          <span className="text-xs text-slate-500">Página {paginaAtual}</span>
+          <button
+            type="button"
+            onClick={() => consultarEmendas(paginaAtual + 1)}
+            disabled={carregando || dados.length === 0}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Próxima página
+          </button>
+        </div>
+      )}
 
       <AdSlot slot="page_bottom" />
     </div>
