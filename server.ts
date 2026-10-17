@@ -659,100 +659,165 @@ app.get('/api/despesas/resumo', async (req: Request, res: Response) => {
 
 // -------------------------------------------------------------
 // ENDPOINT: Emendas Parlamentares (Portal da Transparência CGU)
-// -------------------------------------------------------------
+// Documentação oficial: GET /api-de-dados/emendas
+// Parâmetros documentados: pagina (obrigatório); codigoEmenda, numeroEmenda,
+// nomeAutor, tipoEmenda e ano (opcionais).
+function firstPresent(record: Record<string, any>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
+}
+function optionalText(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return String(value);
+}
+function optionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 app.get('/api/emendas', async (req: Request, res: Response) => {
   const apiKey = process.env.PORTAL_TRANSPARENCIA_API_KEY;
-  const isKeyConfigured = apiKey && apiKey !== 'SUA_CHAVE_DO_PORTAL_TRANSPARENCIA';
+  const isKeyConfigured = Boolean(apiKey && apiKey.trim() && apiKey !== 'SUA_CHAVE_DO_PORTAL_TRANSPARENCIA');
+  const anoRaw = typeof req.query.ano === 'string' ? req.query.ano : '2024';
+  const codigoEmenda = typeof req.query.codigoEmenda === 'string' ? req.query.codigoEmenda.trim() : '';
+  const autor = typeof req.query.autor === 'string' ? req.query.autor.trim() : '';
+  const paginaRaw = typeof req.query.pagina === 'string' ? req.query.pagina : '1';
+  const ano = Number(anoRaw);
+  const pagina = Number(paginaRaw);
 
-  const ano = req.query.ano ? String(req.query.ano) : '2024';
-  const codigoEmenda = req.query.codigoEmenda ? String(req.query.codigoEmenda) : '';
-  const autor = req.query.autor ? String(req.query.autor) : '';
-  const pagina = req.query.pagina ? String(req.query.pagina) : '1';
-
+  if (!Number.isInteger(ano) || ![2023, 2024, 2025, 2026].includes(ano)) {
+    return res.status(400).json({ configurado: true, status: 'erro_validacao', mensagem: 'Selecione um exercício válido: 2023, 2024, 2025 ou 2026.', dados: [] });
+  }
+  if (!Number.isInteger(pagina) || pagina < 1) {
+    return res.status(400).json({ configurado: true, status: 'erro_validacao', mensagem: 'A página deve ser um número inteiro maior que zero.', dados: [] });
+  }
   if (!isKeyConfigured) {
-    // Return structured informational status as strictly instructed in Section 5, 8 & 11
-    return res.json({
-      status: 'sem_chave',
-      configurado: false,
-      mensagem: 'A chave oficial da API do Portal da Transparência (CGU) ainda não foi inserida na variável PORTAL_TRANSPARENCIA_API_KEY.',
+    return res.status(200).json({
+      status: 'sem_chave', configurado: false,
+      mensagem: 'A chave da API da CGU não está configurada no backend.',
       instrucoesCadastro: {
-        passo1: 'Acesse o site oficial da CGU: https://portaldatransparencia.gov.br/api-de-dados/cadastrar-email',
-        passo2: 'Cadastre seu e-mail institucional ou pessoal gratuitamente para receber a chave oficial gerada pelo Governo Federal.',
-        passo3: 'Adicione a variável no ambiente (.env): PORTAL_TRANSPARENCIA_API_KEY=sua_chave_recebida',
+        passo1: 'Acesse https://portaldatransparencia.gov.br/api-de-dados/cadastrar-email',
+        passo2: 'Solicite sua chave oficial gratuita.',
+        passo3: 'Configure PORTAL_TRANSPARENCIA_API_KEY nos segredos/variáveis de ambiente do serviço backend.',
       },
       dados: [],
       fontesOficiaisComplementares: [
-        {
-          nome: 'Portal da Transparência — Consulta Pública Web de Emendas',
-          url: 'https://portaldatransparencia.gov.br/emendas',
-        },
-        {
-          nome: 'SIOP — Sistema Integrado de Planejamento e Orçamento',
-          url: 'https://www.siop.planejamento.gov.br/',
-        },
-        {
-          nome: 'Câmara dos Deputados — Painel do Orçamento Federal',
-          url: 'https://www.camara.leg.br/transparencia/gastos-parlamentares/emendas',
-        },
+        { nome: 'Portal da Transparência — Emendas', url: 'https://portaldatransparencia.gov.br/emendas' },
+        { nome: 'Documentação oficial da API', url: 'https://api.portaldatransparencia.gov.br/' },
       ],
     });
   }
 
+  const cacheKey = `emendas_v2_${ano}_${codigoEmenda}_${autor.toLocaleLowerCase('pt-BR')}_${pagina}`;
+  const cached = getFromCache<Record<string, unknown>>(cacheKey);
+  if (cached) return res.json(cached);
+
+  const params = new URLSearchParams();
+  params.set('pagina', String(pagina));
+  params.set('ano', String(ano));
+  if (codigoEmenda) params.set('codigoEmenda', codigoEmenda);
+  if (autor) params.set('nomeAutor', autor);
+
+  const url = `https://api.portaldatransparencia.gov.br/api-de-dados/emendas?${params.toString()}`;
   try {
-    const cacheKey = `emendas_${ano}_${codigoEmenda}_${autor}_${pagina}`;
-    const cached = getFromCache(cacheKey);
-    if (cached) return res.json(cached);
+    const startedAt = Date.now();
+    const response = await fetchWithTimeout(url, {
+      headers: { Accept: 'application/json', 'chave-api-dados': apiKey as string },
+    }, 12000);
+    sourcesStatus.portalTransparencia.tempoRespostaMs = Date.now() - startedAt;
+    sourcesStatus.portalTransparencia.ultimaConsulta = new Date().toISOString();
 
-    let url = `https://api.portaldatransparencia.gov.br/api-de-dados/emendas?ano=${ano}&pagina=${pagina}`;
-    if (codigoEmenda) url += `&codigoEmenda=${encodeURIComponent(codigoEmenda)}`;
-
-    const r = await fetchWithTimeout(url, {
-      headers: {
-        Accept: 'application/json',
-        'chave-api-dados': apiKey,
-      },
-    });
-
-    if (!r.ok) {
-      return res.status(r.status).json({
-        erro: 'Erro ao consultar a API do Portal da Transparência',
-        status: r.status,
-      });
+    if (response.status === 401 || response.status === 403) {
+      sourcesStatus.portalTransparencia.status = 'sem_chave';
+      return res.status(502).json({ configurado: true, status: 'erro_autenticacao', mensagem: 'A CGU recusou a autenticação. Confira a chave configurada no ambiente do backend.', dados: [] });
+    }
+    if (response.status === 429) {
+      sourcesStatus.portalTransparencia.status = 'degradado';
+      return res.status(429).json({ configurado: true, status: 'limite_requisicoes', mensagem: 'A API oficial atingiu o limite de requisições. Aguarde um pouco e tente novamente.', dados: [] });
+    }
+    if (!response.ok) {
+      sourcesStatus.portalTransparencia.status = response.status >= 500 ? 'indisponivel' : 'degradado';
+      return res.status(502).json({ configurado: true, status: 'erro_api', mensagem: `A API oficial respondeu com o status ${response.status}. Tente novamente mais tarde.`, dados: [] });
     }
 
-    const rawData = await r.json();
-    const dados = (Array.isArray(rawData) ? rawData : []).map((e: any) => ({
-      codigoEmenda: e.codigoEmenda || e.numeroEmenda,
-      ano: Number(e.ano) || Number(ano),
-      tipoEmenda: e.tipoEmenda || 'Emenda Individual',
-      autor: e.nomeAutor || e.autor || 'Não especificado',
-      localidade: e.localidadeDoGasto || e.ufBeneficiada || 'Nacional / Diversos',
-      valorPrevisto: Number(e.valorEmenda || e.valorProposto) || 0,
-      valorEmpenhado: Number(e.valorEmpenhado) || 0,
-      valorLiquidado: Number(e.valorLiquidado) || 0,
-      valorPago: Number(e.valorPago) || 0,
-      situacao: e.fase || 'Registrada',
-      linkOficial: `https://portaldatransparencia.gov.br/emendas/consulta?paginacaoSimples=true&tamanhoPagina=15&offset=0&ano=${ano}`,
-    }));
+    const rawData: unknown = await response.json();
+    if (!Array.isArray(rawData)) {
+      sourcesStatus.portalTransparencia.status = 'degradado';
+      return res.status(502).json({ configurado: true, status: 'formato_inesperado', mensagem: 'A resposta da API oficial veio em um formato diferente do esperado. Nenhum dado foi inventado.', dados: [] });
+    }
 
-    const payload = {
-      configurado: true,
-      dados,
-      total: dados.length,
-      atualizadoEm: new Date().toISOString(),
+    const mapped: Record<string, unknown>[] = rawData.map((item: unknown) => {
+      const e = (item && typeof item === 'object' ? item : {}) as Record<string, any>;
+      const record: Record<string, unknown> = {};
+      const assignText = (target: string, keys: string[]) => {
+        const value = optionalText(firstPresent(e, keys));
+        if (value !== undefined) record[target] = value;
+      };
+      const assignNumber = (target: string, keys: string[]) => {
+        const value = optionalNumber(firstPresent(e, keys));
+        if (value !== undefined) record[target] = value;
+      };
+      assignText('codigoEmenda', ['codigoEmenda', 'numeroEmenda']);
+      assignNumber('ano', ['ano']);
+      assignText('tipoEmenda', ['tipoEmenda']);
+      assignText('autor', ['nomeAutor']);
+      assignText('partidoAutor', ['partidoAutor', 'siglaPartidoAutor']);
+      assignText('ufAutor', ['ufAutor', 'uf']);
+      assignText('localidade', ['localidadeDoGasto', 'localidade']);
+      assignText('beneficiario', ['nomeBeneficiario', 'beneficiario', 'nomeFavorecido']);
+      assignText('orgaoResponsavel', ['nomeOrgao', 'orgaoResponsavel', 'orgao']);
+      assignText('funcao', ['funcao', 'nomeFuncao']);
+      assignText('subfuncao', ['subfuncao', 'nomeSubfuncao']);
+      assignText('situacao', ['situacao', 'fase', 'status']);
+      assignNumber('valorPrevisto', ['valorAutorizado', 'valorPrevisto', 'valorEmenda', 'valorProposto']);
+      assignNumber('valorEmpenhado', ['valorEmpenhado']);
+      assignNumber('valorLiquidado', ['valorLiquidado']);
+      assignNumber('valorPago', ['valorPago']);
+      const code = optionalText(firstPresent(e, ['codigoEmenda', 'numeroEmenda']));
+      record.linkOficial = code
+        ? `https://portaldatransparencia.gov.br/emendas/consulta?paginacaoSimples=true&tamanhoPagina=15&offset=0&ano=${ano}`
+        : 'https://portaldatransparencia.gov.br/emendas';
+      return record;
+    });
+
+    const uniqueByCode = new Map<string, Record<string, unknown>>();
+    mapped.forEach((record, index) => {
+      const code = typeof record.codigoEmenda === 'string' ? record.codigoEmenda : `sem-codigo-${index}`;
+      if (!uniqueByCode.has(code)) uniqueByCode.set(code, record);
+    });
+    const dados = Array.from(uniqueByCode.values());
+    const sumKnown = (field: string): number | null => {
+      const values = dados.map((record) => record[field]).filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+      return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
     };
-
-    setToCache(cacheKey, payload, 300);
-    res.json(payload);
+    const payload = {
+      configurado: true, status: dados.length ? 'sucesso' : 'sem_resultados', dados,
+      total: dados.length, pagina, exercicio: ano, consultadoEm: new Date().toISOString(),
+      resumoFinanceiro: {
+        valorPrevisto: sumKnown('valorPrevisto'), valorEmpenhado: sumKnown('valorEmpenhado'),
+        valorLiquidado: sumKnown('valorLiquidado'), valorPago: sumKnown('valorPago'),
+        observacao: 'Totais calculados apenas com valores numéricos presentes na resposta e após deduplicação por código da emenda. Valores indisponíveis são null, não zero.',
+      },
+      fonte: { nome: 'Portal da Transparência — Controladoria-Geral da União', endpoint: '/api-de-dados/emendas', url: 'https://api.portaldatransparencia.gov.br/' },
+    };
+    sourcesStatus.portalTransparencia.status = 'online';
+    sourcesStatus.portalTransparencia.detalhes = 'Consulta autenticada à API oficial realizada.';
+    setToCache(cacheKey, payload, 180);
+    return res.json(payload);
   } catch (error) {
-    res.status(500).json({
-      erro: 'Falha na comunicação com o Portal da Transparência',
-      detalhes: String(error),
+    sourcesStatus.portalTransparencia.status = 'indisponivel';
+    const timeout = error instanceof Error && error.name === 'AbortError';
+    return res.status(502).json({
+      configurado: true, status: timeout ? 'timeout' : 'erro_conexao',
+      mensagem: timeout ? 'A API oficial demorou demais para responder. Tente novamente.' : 'Não foi possível conectar à API oficial do Portal da Transparência. Tente novamente mais tarde.',
+      dados: [],
     });
   }
 });
 
-// -------------------------------------------------------------
 // TERMÔMETRO DA RUA — Enquetes e Opinião Pública (In-Memory + Gemini)
 // -------------------------------------------------------------
 import { GoogleGenAI } from '@google/genai';
